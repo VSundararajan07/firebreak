@@ -1,0 +1,760 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Firebreak — Wildfire Spread & Evacuation</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #0a0e13; --panel: #10161e; --panel2: #151d27; --line: #222e3c;
+    --text: #dbe4ee; --muted: #7f90a3; --fire: #ff7a2f; --cool: #45c4ff; --ok: #59e08a; --bad: #ff5d5d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+  #app { display: flex; height: 100%; }
+  #side { width: 304px; flex: none; background: var(--panel); border-right: 1px solid var(--line);
+    overflow-y: auto; padding: 16px 16px 24px; }
+  #main { flex: 1; position: relative; min-width: 0; }
+  #map { position: absolute; inset: 0; width: 100%; height: 100%; cursor: crosshair; display: block; }
+  h1 { margin: 0; font-size: 20px; letter-spacing: .01em; display: flex; align-items: center; gap: 8px; }
+  h1 .logo { width: 22px; height: 22px; border-radius: 6px;
+    background: radial-gradient(circle at 50% 70%, #ffd166, #ff7a2f 45%, #c2271d 80%); box-shadow: 0 0 14px #ff7a2f88; }
+  .sub { color: var(--muted); font-size: 12px; margin: 4px 0 12px; }
+  section { border-top: 1px solid var(--line); padding: 12px 0 6px; }
+  h2 { font-size: 10.5px; text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin: 0 0 8px; font-weight: 600; }
+  .row { display: flex; gap: 8px; align-items: center; margin: 7px 0; }
+  .row label { flex: none; color: var(--muted); min-width: 64px; }
+  .row .val { font: 12px ui-monospace, Consolas, monospace; min-width: 42px; text-align: right; color: var(--text); }
+  input[type=range] { flex: 1; accent-color: var(--fire); min-width: 0; }
+  input[type=number], select { background: var(--panel2); color: var(--text); border: 1px solid var(--line);
+    border-radius: 7px; padding: 6px 8px; font: inherit; min-width: 0; }
+  button { background: var(--panel2); color: var(--text); border: 1px solid var(--line); border-radius: 8px;
+    padding: 7px 11px; font: inherit; cursor: pointer; transition: background .15s, border-color .15s; }
+  button:hover { border-color: #3a4c60; background: #1b2633; }
+  button.primary { background: linear-gradient(180deg, #ff8a3d, #e5531f); border-color: #ff8a3d; color: #1a0d05; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.active { border-color: var(--cool); color: var(--cool); }
+  .grow { flex: 1; }
+  .wind-wrap { display: flex; gap: 12px; align-items: center; }
+  #windDial { width: 112px; height: 112px; cursor: grab; flex: none; touch-action: none; }
+  .wind-info { flex: 1; font-size: 12px; color: var(--muted); }
+  .wind-info b { color: var(--text); font: 600 16px ui-monospace, Consolas, monospace; display: block; }
+  .toggle { display: flex; align-items: center; gap: 8px; cursor: pointer; margin: 6px 0; user-select: none; }
+  .toggle input { accent-color: var(--cool); width: 15px; height: 15px; }
+  .legend { height: 8px; border-radius: 4px; margin: 6px 0 2px;
+    background: linear-gradient(90deg, #2f5b8a, #3a7bbf, #3fa7d6, #5fd3d0, #a8e6a1, #ffd166, #ff9f43); }
+  .legend-labels { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); }
+  kbd { background: var(--panel2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px;
+    padding: 0 4px; font: 11px ui-monospace, Consolas, monospace; color: var(--text); }
+  #profile { width: 100%; height: 132px; display: block; background: var(--panel2); border-radius: 8px; border: 1px solid var(--line); }
+  .psum { font: 11px ui-monospace, Consolas, monospace; color: var(--muted); margin-top: 6px; }
+  #statsbar { position: absolute; top: 10px; left: 10px; right: 10px; display: flex; gap: 6px; flex-wrap: wrap; pointer-events: none; }
+  .chip { background: rgba(10, 14, 19, .8); border: 1px solid var(--line); border-radius: 9px; padding: 5px 10px;
+    backdrop-filter: blur(6px); min-width: 76px; }
+  .chip span { display: block; font-size: 9.5px; color: var(--muted); text-transform: uppercase; letter-spacing: .09em; }
+  .chip b { font: 600 15px ui-monospace, Consolas, monospace; color: #fff; }
+  .chip.warn b { color: var(--fire); } .chip.good b { color: var(--ok); } .chip.bad b { color: var(--bad); }
+  #banner { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(10,14,19,.85);
+    border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 12px; color: var(--muted); pointer-events: none; }
+  #banner.paused { color: var(--cool); border-color: var(--cool); }
+  #banner.offline { color: var(--bad); border-color: var(--bad); }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <h1><span class="logo"></span>Firebreak</h1>
+    <div class="sub">Wildfire spread &amp; evacuation · quadtree · Fenwick · Dijkstra</div>
+
+    <section>
+      <h2>Simulation</h2>
+      <div class="row"><button id="pauseBtn" class="grow">Pause</button></div>
+      <div class="row"><label for="speed">Speed</label><input id="speed" type="range" min="1" max="20" step="1" value="4"><span class="val" id="speedVal">4 tps</span></div>
+      <div class="row">
+        <label for="seed">Seed</label><input id="seed" type="number" class="grow" value="42">
+        <button id="resetBtn">Reset</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Wind</h2>
+      <div class="wind-wrap">
+        <canvas id="windDial" width="112" height="112"></canvas>
+        <div class="wind-info">Blowing toward<b id="windDeg">60°</b>Drag the dial to steer the fire.</div>
+      </div>
+      <div class="row"><label for="windStr">Strength</label><input id="windStr" type="range" min="0" max="1" step="0.01" value="0.55"><span class="val" id="windStrVal">0.55</span></div>
+    </section>
+
+    <section>
+      <h2>Tools</h2>
+      <div class="hint"><kbd>Click</kbd> ignite · <kbd>Shift</kbd>+<kbd>Click</kbd> rain</div>
+      <div class="row"><label for="rainR">Rain radius</label><input id="rainR" type="range" min="10" max="150" step="1" value="40"><span class="val" id="rainRVal">40 px</span></div>
+    </section>
+
+    <section>
+      <h2>Evacuation</h2>
+      <div class="row"><label for="town">Town</label><select id="town" class="grow"></select></div>
+      <div class="row">
+        <label for="count">Vehicles</label><input id="count" type="number" min="1" max="1000" value="200" class="grow">
+        <button id="evacBtn" class="primary">Evacuate</button>
+      </div>
+      <div class="row"><button id="evacAllBtn" class="grow">Evacuate all towns</button></div>
+    </section>
+
+    <section>
+      <h2>View</h2>
+      <label class="toggle"><input type="checkbox" id="qtToggle" checked> Quadtree overlay</label>
+      <div class="legend"></div>
+      <div class="legend-labels"><span>coarse · depth 2</span><span>fine · depth 8</span></div>
+      <label class="toggle"><input type="checkbox" id="routeToggle" checked> Evacuation routes</label>
+      <label class="toggle"><input type="checkbox" id="smokeToggle" checked> Smoke</label>
+    </section>
+
+    <section>
+      <h2>Profiler · tick time vs fire front</h2>
+      <canvas id="profile" width="272" height="132"></canvas>
+      <div class="psum" id="psum">collecting…</div>
+    </section>
+  </aside>
+
+  <main id="main">
+    <canvas id="map"></canvas>
+    <div id="statsbar"></div>
+    <div id="banner">connecting…</div>
+  </main>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const canvas = $("map"), ctx = canvas.getContext("2d");
+const TOWN_COLORS = ["#4fd1ff", "#c38bff", "#7dffa8"];
+const DEPTH_COLORS = ["#2f5b8a", "#2f5b8a", "#2f5b8a", "#3a7bbf", "#3fa7d6", "#5fd3d0", "#a8e6a1", "#ffd166", "#ff9f43"];
+const STATUS = { WAITING: 0, MOVING: 1, EVACUATED: 2, STRANDED: 3 };
+
+const S = {
+  meta: null, gen: -1, version: -1, state: null, loadingTerrain: null,
+  terrain: null, fireLayer: null, glowLayer: null, quadLayer: null,
+  view: { s: 1, ox: 0, oy: 0, dpr: 1 },
+  decoded: { burning: [], leaves: [] },
+  agentsPrev: new Map(), stateAt: 0,
+  routeCache: new Map(), particles: [], ripples: [],
+  overlay: true, showRoutes: true, smoke: true,
+  windDragging: false, polling: false, online: false,
+};
+
+// ------------------------------------------------------------------ network
+async function api(path, body) {
+  const opts = body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+  };
+  const res = await fetch(path, opts);
+  if (!res.ok) throw new Error(`${path} → HTTP ${res.status}`);
+  return res.json();
+}
+
+function send(path, body) {
+  api(path, body || {}).catch((err) => setBanner(String(err.message), "offline"));
+}
+
+async function loadTerrain() {
+  const meta = await api("/api/terrain");
+  const buf = await (await fetch("/api/terrain.bin")).arrayBuffer();
+  const n = meta.size_px;
+  const img = document.createElement("canvas");
+  img.width = img.height = n;
+  img.getContext("2d").putImageData(new ImageData(new Uint8ClampedArray(buf), n, n), 0, 0);
+  S.meta = meta;
+  S.terrain = img;
+  S.gen = meta.generation;
+  S.routeCache.clear();
+  S.agentsPrev.clear();
+  S.particles.length = 0;
+  S.fireLayer = makeCanvas(n, n);
+  S.glowLayer = makeCanvas(n / 4, n / 4);
+  S.edges = meta.edges.map(([u, v, flat]) => {
+    const pts = [];
+    for (let i = 0; i < flat.length; i += 2) pts.push([flat[i], flat[i + 1]]);
+    return { u, v, pts };
+  });
+  $("seed").value = meta.seed;
+  const sel = $("town");
+  sel.innerHTML = "";
+  meta.towns.forEach((t) => sel.add(new Option(t.name, t.id)));
+  $("rainR").max = meta.max_rain_radius;
+  resize();
+}
+
+async function poll() {
+  if (S.polling) return;
+  S.polling = true;
+  try {
+    const st = await api(`/api/state?since=${S.version}`);
+    if (!S.online && S.state) updatePanel(S.state);
+    S.online = true;
+    if (!st.unchanged) await onState(st);
+  } catch (err) {
+    S.online = false;
+    setBanner("server offline — retrying…", "offline");
+  } finally {
+    S.polling = false;
+  }
+}
+
+async function onState(st) {
+  if (st.generation !== S.gen) {
+    if (!S.loadingTerrain) S.loadingTerrain = loadTerrain().finally(() => { S.loadingTerrain = null; });
+    await S.loadingTerrain;
+  }
+  const prev = new Map();
+  const t = interpT();
+  if (S.state) {
+    for (const a of S.state.agents) {
+      const p = S.agentsPrev.get(a[0]);
+      prev.set(a[0], p ? [p[0] + (a[1] - p[0]) * t, p[1] + (a[2] - p[1]) * t] : [a[1], a[2]]);
+    }
+  }
+  S.agentsPrev = prev;
+  if (S.routeCache.size > 400) {
+    const live = new Set(st.routes.map((r) => r[0]));
+    for (const rid of S.routeCache.keys()) if (!live.has(rid)) S.routeCache.delete(rid);
+  }
+  S.state = st;
+  S.version = st.version;
+  S.stateAt = performance.now();
+  decodeLeaves(st);
+  drawFireLayers();
+  if (S.overlay) drawQuadLayer();
+  updatePanel(st);
+}
+
+// ------------------------------------------------------------- quadtree data
+function decodeLeaves(st) {
+  const b = st.pack_bits, mask = (1 << b) - 1;
+  const leaves = new Array(st.leaves.length), burning = [];
+  for (let i = 0; i < st.leaves.length; i++) {
+    const v = st.leaves[i];
+    const leaf = {
+      x: v & mask, y: (v >>> b) & mask, size: 1 << ((v >>> (2 * b)) & 15),
+      state: (v >>> (2 * b + 4)) & 3, heat: (v >>> (2 * b + 6)) & 7,
+    };
+    leaf.depth = b - Math.log2(leaf.size);
+    leaves[i] = leaf;
+    if (leaf.state === 1) burning.push(leaf);
+  }
+  S.decoded = { leaves, burning };
+}
+
+function heatColor(heat) {
+  const t = Math.min(1, heat / 7);
+  const r = 190 + 65 * Math.min(1, t * 1.6), g = 30 + 190 * t * t, b = 20 + 60 * t * t * t;
+  return `rgb(${r | 0},${g | 0},${b | 0})`;
+}
+
+function drawFireLayers() {
+  const cp = S.meta.cell_px, n = S.meta.size_px;
+  const f = S.fireLayer.getContext("2d");
+  f.clearRect(0, 0, n, n);
+  for (const leaf of S.decoded.leaves) {
+    if (leaf.state === 2) f.fillStyle = "rgba(24,18,16,0.86)";
+    else if (leaf.state === 3) f.fillStyle = "rgba(64,92,112,0.78)";
+    else continue;
+    f.fillRect(leaf.x * cp, leaf.y * cp, leaf.size * cp, leaf.size * cp);
+  }
+  for (const leaf of S.decoded.burning) {
+    f.fillStyle = heatColor(leaf.heat);
+    f.fillRect(leaf.x * cp, leaf.y * cp, cp, cp);
+  }
+  const g = S.glowLayer.getContext("2d"), q = cp / 4;
+  g.clearRect(0, 0, n / 4, n / 4);
+  g.fillStyle = "rgba(255,140,40,0.9)";
+  for (const leaf of S.decoded.burning) g.fillRect(leaf.x * q - 0.5, leaf.y * q - 0.5, q + 1, q + 1);
+}
+
+function drawQuadLayer() {
+  const { s, dpr } = S.view, n = S.meta.size_px, cp = S.meta.cell_px;
+  const px = Math.max(1, Math.round(n * s * dpr));
+  if (!S.quadLayer || S.quadLayer.width !== px) S.quadLayer = makeCanvas(px, px);
+  const q = S.quadLayer.getContext("2d"), k = s * dpr * cp;
+  q.clearRect(0, 0, px, px);
+  const byDepth = Array.from({ length: S.meta.max_depth + 1 }, () => []);
+  for (const leaf of S.decoded.leaves) byDepth[leaf.depth].push(leaf);
+  q.globalCompositeOperation = "lighter";
+  for (let d = 0; d < byDepth.length; d++) {
+    const list = byDepth[d];
+    if (!list.length) continue;
+    const fine = d >= 6, color = DEPTH_COLORS[d];
+    if (fine) {
+      q.fillStyle = color + (d === 8 ? "1c" : "12");
+      for (const l of list) if (l.state !== 1) q.fillRect(l.x * k, l.y * k, l.size * k, l.size * k);
+    }
+    q.strokeStyle = color + (d <= 3 ? "8c" : "d0");
+    q.lineWidth = Math.max(0.6, (3.4 - d * 0.32) * dpr);
+    q.beginPath();
+    for (const l of list) {
+      if (l.state === 1) continue;
+      q.rect(l.x * k + 0.5, l.y * k + 0.5, l.size * k - 1, l.size * k - 1);
+    }
+    q.stroke();
+  }
+  q.strokeStyle = "rgba(255,236,170,0.95)";
+  q.lineWidth = Math.max(0.6, 0.8 * dpr);
+  q.beginPath();
+  for (const l of S.decoded.burning) q.rect(l.x * k + 0.5, l.y * k + 0.5, k - 1, k - 1);
+  q.stroke();
+  q.globalCompositeOperation = "source-over";
+}
+
+// ------------------------------------------------------------------ drawing
+function makeCanvas(w, h) {
+  const c = document.createElement("canvas");
+  c.width = Math.max(1, Math.round(w));
+  c.height = Math.max(1, Math.round(h));
+  return c;
+}
+
+function resize() {
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth, H = canvas.clientHeight;
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
+  if (!S.meta) return;
+  const n = S.meta.size_px, top = 70;
+  const s = Math.max(0.2, Math.min((W - 24) / n, (H - top - 16) / n));
+  S.view = { s, dpr, ox: (W - n * s) / 2, oy: top + (H - top - 16 - n * s) / 2 };
+  if (S.state && S.overlay) drawQuadLayer();
+}
+
+function toMap(clientX, clientY) {
+  const r = canvas.getBoundingClientRect(), v = S.view;
+  return [(clientX - r.left - v.ox) / v.s, (clientY - r.top - v.oy) / v.s];
+}
+
+function interpT() {
+  if (!S.state) return 1;
+  const tickMs = 1000 / Math.max(1, S.state.tps);
+  return S.state.paused ? 1 : Math.min(1, (performance.now() - S.stateAt) / tickMs);
+}
+
+function mapTransform() {
+  const { s, dpr, ox, oy } = S.view;
+  ctx.setTransform(s * dpr, 0, 0, s * dpr, ox * dpr, oy * dpr);
+}
+
+function polyline(pts) {
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+}
+
+function lerpColor(a, b, t) {
+  const pa = [1, 3, 5].map((i) => parseInt(a.slice(i, i + 2), 16));
+  const pb = [1, 3, 5].map((i) => parseInt(b.slice(i, i + 2), 16));
+  return `rgb(${pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(",")})`;
+}
+
+function drawRoads(now) {
+  const st = S.state, s = S.view.s;
+  ctx.lineCap = "round"; ctx.lineJoin = "round";
+  S.edges.forEach((e, i) => {
+    const status = st.roads[i], cong = st.congestion[i];
+    ctx.beginPath(); polyline(e.pts);
+    ctx.setLineDash([]);
+    ctx.strokeStyle = "rgba(20,20,22,0.75)"; ctx.lineWidth = 5 / s; ctx.stroke();
+    if (status === 2) {
+      ctx.setLineDash([4 / s, 5 / s]);
+      ctx.strokeStyle = "#7a1f1a"; ctx.lineWidth = 2.4 / s;
+    } else if (status === 1) {
+      const pulse = 0.6 + 0.4 * Math.sin(now / 180);
+      ctx.strokeStyle = `rgba(255,${120 + 60 * pulse | 0},40,1)`; ctx.lineWidth = 2.6 / s;
+    } else {
+      ctx.strokeStyle = cong > 0 ? lerpColor("#e9e3d2", "#ff3b3b", Math.min(1, cong / 14)) : "#d9d3c2";
+      ctx.lineWidth = (2.2 + Math.min(1.8, cong / 8)) / s;
+    }
+    ctx.stroke();
+  });
+  ctx.setLineDash([]);
+}
+
+function routePoints(route) {
+  const [rid, , start, , edges] = route;
+  if (S.routeCache.has(rid)) return S.routeCache.get(rid);
+  let node = start;
+  const pts = [S.meta.nodes[node]];
+  for (const eid of edges) {
+    const e = S.edges[eid];
+    const seq = e.u === node ? e.pts : e.pts.slice().reverse();
+    for (let i = 1; i < seq.length; i++) pts.push(seq[i]);
+    node = e.u === node ? e.v : e.u;
+  }
+  S.routeCache.set(rid, pts);
+  return pts;
+}
+
+function drawRoutes(now) {
+  const s = S.view.s;
+  for (const route of S.state.routes) {
+    const pts = routePoints(route);
+    if (pts.length < 2) continue;
+    const color = TOWN_COLORS[route[1] % TOWN_COLORS.length], fresh = route[3] <= 6;
+    ctx.beginPath(); polyline(pts);
+    ctx.globalAlpha = fresh ? 0.55 : 0.25;
+    ctx.strokeStyle = fresh ? "#ffffff" : color;
+    ctx.lineWidth = (fresh ? 9 - route[3] : 7) / s; ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([9 / s, 7 / s]);
+    ctx.lineDashOffset = -now / 40 / s;
+    ctx.strokeStyle = color; ctx.lineWidth = 2.6 / s; ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawRain(now) {
+  const s = S.view.s;
+  for (const [x, y, r, frac] of S.state.rains) {
+    const g = ctx.createRadialGradient(x, y, r * 0.2, x, y, r);
+    g.addColorStop(0, `rgba(90,160,255,${0.28 * frac + 0.08})`);
+    g.addColorStop(1, "rgba(90,160,255,0.03)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = `rgba(150,200,255,${0.5 * frac + 0.2})`; ctx.lineWidth = 1.2 / s; ctx.stroke();
+    ctx.strokeStyle = `rgba(190,225,255,${0.55 * frac + 0.15})`; ctx.lineWidth = 1 / s;
+    ctx.beginPath();
+    const drops = Math.round(r * 0.8);
+    for (let i = 0; i < drops; i++) {
+      const a = (i * 2.399) % (Math.PI * 2), d = r * Math.sqrt(((i * 0.618) % 1));
+      const fall = ((now / 6 + i * 37) % 24) - 12;
+      const dx = x + Math.cos(a) * d, dy = y + Math.sin(a) * d + fall * 0.5;
+      ctx.moveTo(dx, dy); ctx.lineTo(dx - 1.2, dy + 4);
+    }
+    ctx.stroke();
+  }
+}
+
+function drawPlaces() {
+  const s = S.view.s, m = S.meta;
+  for (const sid of m.shelters) {
+    const [x, y] = m.nodes[sid];
+    ctx.fillStyle = "#0f2a1a"; ctx.strokeStyle = "#59e08a"; ctx.lineWidth = 2 / s;
+    ctx.beginPath(); ctx.arc(x, y, 7 / s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "#59e08a"; ctx.font = `bold ${9 / s}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText("S", x, y + 0.5 / s);
+  }
+  for (const t of m.towns) {
+    const color = TOWN_COLORS[t.id % TOWN_COLORS.length];
+    ctx.strokeStyle = color; ctx.lineWidth = 1.5 / s; ctx.setLineDash([3 / s, 3 / s]);
+    ctx.beginPath(); ctx.arc(t.x, t.y, 24, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = `600 ${12 / s}px system-ui`; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.lineWidth = 3 / s; ctx.strokeStyle = "rgba(0,0,0,0.75)"; ctx.strokeText(t.name, t.x, t.y - 27);
+    ctx.fillStyle = "#fff"; ctx.fillText(t.name, t.x, t.y - 27);
+  }
+}
+
+function drawAgents(now) {
+  const s = S.view.s, t = interpT();
+  for (const [id, x, y, town, status] of S.state.agents) {
+    const p = S.agentsPrev.get(id);
+    const ax = p ? p[0] + (x - p[0]) * t : x, ay = p ? p[1] + (y - p[1]) * t : y;
+    if (status === STATUS.WAITING) continue;
+    ctx.beginPath(); ctx.arc(ax, ay, 2.6 / s, 0, Math.PI * 2);
+    ctx.fillStyle = TOWN_COLORS[town % TOWN_COLORS.length]; ctx.fill();
+    ctx.lineWidth = 1 / s;
+    ctx.strokeStyle = status === STATUS.STRANDED ? (Math.sin(now / 150) > 0 ? "#ff3b3b" : "#fff") : "rgba(0,0,0,0.8)";
+    ctx.stroke();
+  }
+}
+
+function updateParticles(dt) {
+  const st = S.state, burning = S.decoded.burning, cp = S.meta.cell_px;
+  const rad = st.wind.direction_deg * Math.PI / 180, ws = st.wind.strength;
+  const wx = Math.sin(rad) * ws * 26, wy = -Math.cos(rad) * ws * 26;
+  if (S.smoke && burning.length && S.particles.length < 320) {
+    const spawn = Math.min(6, 1 + burning.length / 300);
+    for (let i = 0; i < spawn; i++) {
+      const l = burning[(Math.random() * burning.length) | 0];
+      const ember = Math.random() < 0.25;
+      S.particles.push({
+        x: l.x * cp + 1, y: l.y * cp + 1, vx: wx + (Math.random() - 0.5) * 8, vy: wy - 6 + (Math.random() - 0.5) * 8,
+        life: 0, max: ember ? 0.9 + Math.random() : 2.5 + Math.random() * 2, ember,
+      });
+    }
+  }
+  for (const p of S.particles) { p.life += dt; p.x += p.vx * dt; p.y += p.vy * dt; }
+  S.particles = S.particles.filter((p) => p.life < p.max);
+}
+
+function drawParticles() {
+  for (const p of S.particles) {
+    const k = p.life / p.max;
+    if (p.ember) {
+      ctx.fillStyle = `rgba(255,${170 - 90 * k | 0},60,${1 - k})`;
+      ctx.fillRect(p.x, p.y, 1.2, 1.2);
+    } else {
+      ctx.fillStyle = `rgba(70,64,60,${0.28 * (1 - k)})`;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 3 + 12 * k, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+}
+
+function drawRipples(now) {
+  const s = S.view.s;
+  S.ripples = S.ripples.filter((r) => now - r.t0 < 700);
+  for (const r of S.ripples) {
+    const k = (now - r.t0) / 700;
+    ctx.strokeStyle = r.color.replace("A", String(1 - k));
+    ctx.lineWidth = 2 / s;
+    ctx.beginPath(); ctx.arc(r.x, r.y, r.r * (0.3 + k), 0, Math.PI * 2); ctx.stroke();
+  }
+}
+
+let lastFrame = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - lastFrame) / 1000);
+  lastFrame = now;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.fillStyle = "#0a0e13";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  if (S.terrain && S.state) {
+    const n = S.meta.size_px;
+    mapTransform();
+    ctx.shadowColor = "rgba(0,0,0,0.6)"; ctx.shadowBlur = 24;
+    ctx.imageSmoothingEnabled = true;
+    ctx.drawImage(S.terrain, 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(S.fireLayer, 0, 0);
+    ctx.imageSmoothingEnabled = true;
+    if (S.decoded.burning.length) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = 0.55 + 0.25 * Math.sin(now / 90) * Math.sin(now / 37);
+      ctx.drawImage(S.glowLayer, 0, 0, n, n);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = "source-over";
+    }
+    drawRoads(now);
+    if (S.overlay && S.quadLayer) {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.drawImage(S.quadLayer, Math.round(S.view.ox * S.view.dpr), Math.round(S.view.oy * S.view.dpr));
+      mapTransform();
+    }
+    if (S.showRoutes) drawRoutes(now);
+    drawRain(now);
+    drawPlaces();
+    drawAgents(now);
+    updateParticles(dt);
+    if (S.smoke) drawParticles();
+    drawRipples(now);
+    ctx.strokeStyle = "#2a3646"; ctx.lineWidth = 1 / S.view.s; ctx.strokeRect(0, 0, n, n);
+  }
+  requestAnimationFrame(frame);
+}
+
+// -------------------------------------------------------------------- panel
+function chip(label, value, cls) {
+  return `<div class="chip ${cls || ""}"><span>${label}</span><b>${value}</b></div>`;
+}
+
+function fmtTime(sec) {
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60);
+  return `${h}h ${String(m).padStart(2, "0")}m`;
+}
+
+function updatePanel(st) {
+  const x = st.stats;
+  $("statsbar").innerHTML = [
+    chip("Tick", `${x.tick_ms.toFixed(1)} ms`, x.tick_ms > 100 ? "bad" : ""),
+    chip("Front cells", x.frontier, "warn"),
+    chip("Burning", x.burning, "warn"),
+    chip("QT leaves", x.leaves),
+    chip("Burned", `${(x.burned_cells * 0.0036).toFixed(1)} km²`),
+    chip("Evacuated", `${x.evacuated}/${x.total_agents}`, "good"),
+    chip("En route", x.moving + x.waiting),
+    chip("Stranded", x.stranded, x.stranded ? "bad" : ""),
+    chip("Reroutes", x.reroutes),
+    chip("Roads closed", x.roads_closed, x.roads_closed ? "bad" : ""),
+    chip("Avg evac", x.evacuated ? fmtTime(x.avg_evac_s) : "—"),
+    chip("Sim time", fmtTime(st.sim_time_s)),
+  ].join("");
+  $("pauseBtn").textContent = st.paused ? "Resume" : "Pause";
+  $("pauseBtn").classList.toggle("active", st.paused);
+  if (document.activeElement !== $("speed")) {
+    $("speed").value = st.tps; $("speedVal").textContent = `${st.tps} tps`;
+  }
+  if (!S.windDragging && document.activeElement !== $("windStr")) {
+    S.wind = { deg: st.wind.direction_deg, str: st.wind.strength };
+    $("windStr").value = S.wind.str; $("windStrVal").textContent = S.wind.str.toFixed(2);
+    drawDial();
+  }
+  if (st.paused) setBanner("paused", "paused");
+  else setBanner(`seed ${st.terrain.seed} · tick ${st.tick} · ${st.tps} tps`, "");
+}
+
+function setBanner(text, cls) {
+  const b = $("banner");
+  b.textContent = text;
+  b.className = cls;
+}
+
+// ---------------------------------------------------------------- wind dial
+S.wind = { deg: 60, str: 0.55 };
+function drawDial() {
+  const c = $("windDial"), g = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
+  if (c.width !== 112 * dpr) { c.width = c.height = 112 * dpr; }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, 112, 112);
+  const cx = 56, cy = 56, R = 50;
+  const grad = g.createRadialGradient(cx, cy, 4, cx, cy, R);
+  grad.addColorStop(0, "#1c2834"); grad.addColorStop(1, "#111a23");
+  g.fillStyle = grad; g.beginPath(); g.arc(cx, cy, R, 0, Math.PI * 2); g.fill();
+  g.strokeStyle = "#2c3b4c"; g.lineWidth = 1.5; g.stroke();
+  for (let i = 0; i < 24; i++) {
+    const a = i * Math.PI / 12, l = i % 6 === 0 ? 8 : 4;
+    g.strokeStyle = i % 6 === 0 ? "#6f8299" : "#33445a";
+    g.beginPath();
+    g.moveTo(cx + Math.sin(a) * (R - 2), cy - Math.cos(a) * (R - 2));
+    g.lineTo(cx + Math.sin(a) * (R - 2 - l), cy - Math.cos(a) * (R - 2 - l));
+    g.stroke();
+  }
+  g.fillStyle = "#7f90a3"; g.font = "600 9px system-ui"; g.textAlign = "center"; g.textBaseline = "middle";
+  [["N", 0], ["E", 90], ["S", 180], ["W", 270]].forEach(([t, d]) => {
+    const a = d * Math.PI / 180; g.fillText(t, cx + Math.sin(a) * (R - 16), cy - Math.cos(a) * (R - 16));
+  });
+  const a = S.wind.deg * Math.PI / 180, len = 12 + 26 * S.wind.str;
+  const tx = cx + Math.sin(a) * len, ty = cy - Math.cos(a) * len;
+  g.strokeStyle = "#ff8a3d"; g.fillStyle = "#ff8a3d"; g.lineWidth = 3; g.lineCap = "round";
+  g.shadowColor = "#ff7a2f"; g.shadowBlur = 10;
+  g.beginPath(); g.moveTo(cx - Math.sin(a) * 10, cy + Math.cos(a) * 10); g.lineTo(tx, ty); g.stroke();
+  g.beginPath();
+  g.moveTo(tx + Math.sin(a) * 7, ty - Math.cos(a) * 7);
+  g.lineTo(tx + Math.cos(a) * 5, ty + Math.sin(a) * 5);
+  g.lineTo(tx - Math.cos(a) * 5, ty - Math.sin(a) * 5);
+  g.closePath(); g.fill();
+  g.shadowBlur = 0;
+  g.fillStyle = "#dbe4ee"; g.beginPath(); g.arc(cx, cy, 3, 0, Math.PI * 2); g.fill();
+  $("windDeg").textContent = `${Math.round(S.wind.deg)}°`;
+}
+
+let windTimer = 0;
+function pushWind(immediate) {
+  clearTimeout(windTimer);
+  const go = () => send("/api/wind", { direction_deg: S.wind.deg, strength_0_to_1: S.wind.str });
+  if (immediate) go(); else windTimer = setTimeout(go, 120);
+}
+
+function dialAngle(ev) {
+  const r = $("windDial").getBoundingClientRect();
+  const dx = ev.clientX - r.left - r.width / 2, dy = ev.clientY - r.top - r.height / 2;
+  S.wind.deg = (Math.atan2(dx, -dy) * 180 / Math.PI + 360) % 360;
+  drawDial();
+}
+
+// --------------------------------------------------------------- profiler UI
+async function refreshProfile() {
+  try {
+    const p = await api("/api/profile");
+    drawProfile(p);
+  } catch (err) { /* server offline: banner already shows it */ }
+}
+
+function drawProfile(p) {
+  const c = $("profile"), g = c.getContext("2d"), dpr = window.devicePixelRatio || 1;
+  const W = c.clientWidth, H = c.clientHeight;
+  if (c.width !== Math.round(W * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, W, H);
+  const xs = p.frontier_sizes, ys = p.tick_times, L = 30, B = 18;
+  const maxX = Math.max(50, ...xs) * 1.05, maxY = Math.max(20, ...ys) * 1.15;
+  g.strokeStyle = "#263343"; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(L, 6); g.lineTo(L, H - B); g.lineTo(W - 6, H - B); g.stroke();
+  g.fillStyle = "#7f90a3"; g.font = "9px ui-monospace, Consolas, monospace";
+  g.textAlign = "right"; g.fillText(`${maxY.toFixed(0)}ms`, L - 3, 12); g.fillText("0", L - 3, H - B);
+  g.textAlign = "left"; g.fillText("front cells →", L + 4, H - 5);
+  g.textAlign = "right"; g.fillText(String(Math.round(maxX)), W - 6, H - 5);
+  if (maxY > 100) {
+    const yb = H - B - (100 / maxY) * (H - B - 6);
+    g.strokeStyle = "#ff5d5d66"; g.setLineDash([4, 3]);
+    g.beginPath(); g.moveTo(L, yb); g.lineTo(W - 6, yb); g.stroke(); g.setLineDash([]);
+  }
+  for (let i = 0; i < xs.length; i++) {
+    const age = (xs.length - i) / xs.length;
+    g.fillStyle = `rgba(255,${140 + 80 * age | 0},${60 + 120 * age | 0},${0.9 - age * 0.6})`;
+    const x = L + (xs[i] / maxX) * (W - L - 8), y = H - B - (ys[i] / maxY) * (H - B - 6);
+    g.fillRect(x - 1.5, y - 1.5, 3, 3);
+  }
+  const sm = p.summary;
+  $("psum").textContent = `avg tick ${sm.tick_ms_avg.toFixed(1)}ms · max ${sm.tick_ms_max.toFixed(1)}ms · max reroute ${sm.reroute_ms_max.toFixed(1)}ms`;
+}
+
+// ------------------------------------------------------------------- events
+function bindControls() {
+  canvas.addEventListener("pointerdown", (ev) => {
+    if (!S.meta || ev.button !== 0) return;
+    const [x, y] = toMap(ev.clientX, ev.clientY), n = S.meta.size_px;
+    if (x < 0 || y < 0 || x >= n || y >= n) return;
+    if (ev.shiftKey) {
+      const radius = Number($("rainR").value);
+      send("/api/rain", { x, y, radius });
+      S.ripples.push({ x, y, r: radius, t0: performance.now(), color: "rgba(120,190,255,A)" });
+    } else {
+      send("/api/ignite", { x, y });
+      S.ripples.push({ x, y, r: 18, t0: performance.now(), color: "rgba(255,170,60,A)" });
+    }
+  });
+  $("pauseBtn").onclick = () => send(S.state && S.state.paused ? "/api/resume" : "/api/pause");
+  $("speed").oninput = () => { $("speedVal").textContent = `${$("speed").value} tps`; };
+  $("speed").onchange = () => send("/api/speed", { tps: Number($("speed").value) });
+  $("resetBtn").onclick = () => {
+    const seed = parseInt($("seed").value, 10);
+    setBanner("generating terrain…", "paused");
+    send("/api/reset", { seed: Number.isFinite(seed) ? seed : null });
+  };
+  $("windStr").oninput = () => {
+    S.wind.str = Number($("windStr").value);
+    $("windStrVal").textContent = S.wind.str.toFixed(2);
+    drawDial(); pushWind(false);
+  };
+  $("rainR").oninput = () => { $("rainRVal").textContent = `${$("rainR").value} px`; };
+  $("evacBtn").onclick = () => {
+    const count = Math.max(1, Math.min(1000, parseInt($("count").value, 10) || 200));
+    send("/api/evacuate", { town_id: Number($("town").value), count });
+  };
+  $("evacAllBtn").onclick = () => {
+    const count = Math.max(1, Math.min(1000, parseInt($("count").value, 10) || 200));
+    S.meta.towns.forEach((t) => send("/api/evacuate", { town_id: t.id, count }));
+  };
+  $("qtToggle").onchange = () => { S.overlay = $("qtToggle").checked; if (S.overlay && S.state) drawQuadLayer(); };
+  $("routeToggle").onchange = () => { S.showRoutes = $("routeToggle").checked; };
+  $("smokeToggle").onchange = () => { S.smoke = $("smokeToggle").checked; if (!S.smoke) S.particles.length = 0; };
+  const dial = $("windDial");
+  dial.addEventListener("pointerdown", (ev) => {
+    S.windDragging = true; dial.setPointerCapture(ev.pointerId); dialAngle(ev); pushWind(false);
+  });
+  dial.addEventListener("pointermove", (ev) => { if (S.windDragging) { dialAngle(ev); pushWind(false); } });
+  dial.addEventListener("pointerup", () => { S.windDragging = false; pushWind(true); });
+  window.addEventListener("resize", resize);
+}
+
+async function start() {
+  bindControls();
+  drawDial();
+  const seed = new URLSearchParams(location.search).get("seed");
+  try {
+    if (seed !== null && /^-?\d+$/.test(seed)) {
+      setBanner(`generating terrain for seed ${seed}…`, "paused");
+      await api("/api/reset", { seed: parseInt(seed, 10) });
+    }
+    await loadTerrain();
+  } catch (err) {
+    setBanner("server offline — retrying…", "offline");
+  }
+  setInterval(poll, 50);
+  setInterval(refreshProfile, 1500);
+  requestAnimationFrame(frame);
+}
+
+start();
+</script>
+</body>
+</html>
